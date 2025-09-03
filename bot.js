@@ -6,6 +6,13 @@ const TelegramBot = require('node-telegram-bot-api');
 const mongoose = require('mongoose');
 const cron = require('node-cron');
 
+const express = require('express');  // add this
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => res.send('Bot is running'));
+app.listen(PORT, () => console.log(`Web server listening on port ${PORT}`));
+
 // === 1. Load credentials from .env ===
 const token = process.env.BOT_TOKEN;       
 const mongoURI = process.env.MONGODB_URI;  
@@ -98,5 +105,30 @@ cron.schedule('0 9 * * *', async () => {
 }, {
   timezone: "Europe/Moscow" // <-- replace with your timezone, e.g., "Europe/Belgrade"
 });
+// === 7. Daily reminder at 9 AM ===
+cron.schedule('0 9 * * *', async () => {
+  const users = await User.find();
+  users.forEach(user => {
+    bot.sendMessage(user.chatId, "Вы выпивали вчера?", {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "Yes", callback_data: "yes" }],
+          [{ text: "No", callback_data: "no" }]
+        ]
+      }
+    });
+  });
+}, {
+  timezone: "Europe/Moscow"
+});
+
+// === 8. Dummy Express server for Render ===
+const express = require('express');
+const app = express();
+
+app.get('/', (req, res) => res.send('Bot is running 🚀'));
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`✅ Web server listening on port ${PORT}`));
 
 
