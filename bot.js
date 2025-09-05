@@ -9,12 +9,17 @@ const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get('/', (req, res) => res.send('Bot is running 🚀'));
+// Minimal web server so Render sees an open port + a pingable health route
+app.get('/', (_req, res) => res.send('Bot is running 🚀'));
+app.get('/healthz', (_req, res) => {
+  console.log(`🩺 health ping @ ${new Date().toISOString()}`);
+  res.send('ok');
+});
 app.listen(PORT, () => console.log(`✅ Web server listening on port ${PORT}`));
 
 // === 1. Load credentials from .env ===
-const token = process.env.BOT_TOKEN;       
-const mongoURI = process.env.MONGODB_URI;  
+const token = process.env.BOT_TOKEN;
+const mongoURI = process.env.MONGODB_URI;
 
 // === 2. Connect to MongoDB Atlas ===
 mongoose.connect(mongoURI)
@@ -38,13 +43,14 @@ bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
 
-  // Start command
   if (text === "/start") {
-    bot.sendMessage(chatId, "Здравствуйте! Введите дату, когда вы пили алкоголь последний раз (в формате YYYY-MM-DD, например, 2025-08-12):");
+    bot.sendMessage(
+      chatId,
+      "Здравствуйте! Введите дату, когда вы пили алкоголь последний раз (в формате YYYY-MM-DD, например, 2025-08-12):"
+    );
     return;
   }
 
-  // Check if message matches a date
   const datePattern = /^\d{4}-\d{2}-\d{2}$/;
   if (datePattern.test(text)) {
     const lastDrink = new Date(text);
@@ -61,7 +67,6 @@ bot.on("message", async (msg) => {
 
     const diffDays = Math.floor((Date.now() - lastDrink.getTime()) / (1000 * 60 * 60 * 24));
     bot.sendMessage(chatId, `Дней без алкоголя: ${diffDays}`);
-    return;
   }
 });
 
@@ -75,7 +80,7 @@ bot.on("callback_query", async (callbackQuery) => {
 
   if (data === "yes") {
     user.streak = 0;
-    user.lastDrinkDate = new Date(); // reset last drink date to today
+    user.lastDrinkDate = new Date();
     await user.save();
     bot.sendMessage(chatId, "Вы выпили вчера. Дней без алкоголя: 0");
   } else if (data === "no") {
@@ -84,23 +89,29 @@ bot.on("callback_query", async (callbackQuery) => {
     bot.sendMessage(chatId, `Вы не выпивали вчера. Дней без алкоголя: ${user.streak}`);
   }
 
-  // Acknowledge callback
   bot.answerCallbackQuery(callbackQuery.id);
 });
 
-// === 7. Daily reminder at 9 AM ===
+// === 7. Daily reminder at 9 AM (single cron) ===
 cron.schedule('0 9 * * *', async () => {
-  const users = await User.find();
-  users.forEach(user => {
-    bot.sendMessage(user.chatId, "Вы выпивали вчера?", {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "Yes", callback_data: "yes" }],
-          [{ text: "No", callback_data: "no" }]
-        ]
-      }
-    });
-  });
+  try {
+    const users = await User.find();
+    console.log(`🕘 cron fired (Europe/Moscow): sending daily prompt to ${users.length} users`);
+    await Promise.all(
+      users.map(u =>
+        bot.sendMessage(u.chatId, "Вы выпивали вчера?", {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "Yes", callback_data: "yes" }],
+              [{ text: "No", callback_data: "no" }]
+            ]
+          }
+        })
+      )
+    );
+  } catch (e) {
+    console.error("❌ cron error:", e);
+  }
 }, {
-  timezone: "Europe/Moscow" // <-- replace with your timezone, e.g., "Europe/Belgrade"
+  timezone: "Europe/Moscow"
 });
